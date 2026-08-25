@@ -1,97 +1,46 @@
-# MoviePilot-Plugins
+# MoviePilot-Plugins-fork
 
-MoviePilot 官方插件仓库，也是默认插件市场的源码与索引仓库：
-<https://github.com/jxxghp/MoviePilot-Plugins>
+我的 [MoviePilot](https://github.com/jxxghp/MoviePilot) 个人插件仓库（fork 自 [jxxghp/MoviePilot-Plugins](https://github.com/jxxghp/MoviePilot-Plugins) 后精简为个人插件专用）。
 
-当前开发目标是 MoviePilot V3。新插件开发者不需要先阅读 V2 文档，也不要在多份
-“适配指南”之间自行拼接流程。
+官方插件请从 MoviePilot 插件市场安装，本仓库只放我自己开发的插件。
 
-## 从这里开始
+## 插件列表
 
-### 开发一个新的 V3 插件
+| 插件 | 说明 |
+| --- | --- |
+| [EndedTVPackScan](plugins.v3/endedtvpackscan/) | 完结剧集扫描通知：扫描 PT 站点当天发布的完结连续剧（基于站点完结列表页 path 过滤，如 hhanclub `?tag_id17=1`、hddolby `?mystat=complete`、pandapt `?tag_id=10`），TMDB 识别后按剧去重，推送带海报与简介的通知到 Telegram/飞书。设计文档见 [docs/plans/ended-tv-pack-notify.md](docs/plans/ended-tv-pack-notify.md)。 |
 
-阅读 [MoviePilot 插件开发指南（V3）](./docs/Plugin_Development.md)。这是当前唯一的
-完整主指南，覆盖目录、最小骨架、生命周期、稳定 SDK、配置与数据、V3 数据库事务、
-页面、事件、API、服务、测试和发布。
-
-### 把旧插件迁移到 V3
-
-先阅读主指南，再查看
-[V2 插件迁移到 V3](./docs/V3_Plugin_Adaptation.md)。迁移专题只讲旧导入兼容、
-数据库事务、媒体身份、音乐链、数据迁移和 V3 合同差异，不再承担从零开发说明。
-
-### 维护官方仓库或发布版本
-
-查看 [仓库与发布指南](./docs/Repository_Guide.md)，了解索引、版本选择、元数据、
-CI、Release 和跨仓协作边界。
-
-### 按具体功能查示例
-
-查看 [常见问题](./docs/FAQ.md)。API 返回与前端调用另见
-[插件 API 专题](./docs/V3_API_Response_Adaptation.md)。
-
-### 仍然维护 V2 插件
-
-[V2 插件开发指南](./docs/V2_Plugin_Development.md) 仅作为历史版本参考。新插件和
-V3 专用实现不要从该文档开始。
-
-## 仓库负责什么
-
-本仓库不是独立运行时：
-
-- `MoviePilot` 负责插件加载、事件分发、API、服务、数据、工作流和 Agent 运行时。
-- `MoviePilot-Frontend` 负责配置页、详情页、仪表板和 Vue 联邦组件渲染。
-- `MoviePilot-Plugins` 负责插件源码、市场索引、图标、测试、文档和发布流程。
-
-## 当前目录
+## 仓库结构
 
 ```text
-MoviePilot-Plugins/
-├── plugins.v3/              # 当前 V3 专用插件，新插件放这里
-├── tests/v3/                # V3 插件测试
-├── package.v3.json          # V3 插件市场索引
-├── plugins.v2/              # V2 历史专用实现
-├── package.v2.json          # V2 历史索引
-├── plugins/                 # 更早或跨版本的存量实现
-├── package.json             # 默认历史索引
-├── icons/                   # 插件图标
-├── docs/                    # 开发、迁移、FAQ 和发布文档
-└── .github/                 # CI 与 Release 工作流
+├── plugins.v3/            # V3 插件源码（每个插件一个目录）
+│   └── <plugin_id小写>/
+│       └── __init__.py    # 主类，类名 = 插件 ID
+├── icons/                 # 插件图标（package.v3.json 的 icon 字段引用文件名）
+├── package.v3.json        # 插件市场索引（元数据/版本/history）
+└── docs/plans/            # 插件设计文档
 ```
 
-V3 新插件使用 `plugins.v3/<plugin_id_lower>/`、`tests/v3/<plugin_id_lower>/` 和
-`package.v3.json`。V3 对旧插件的回退加载只用于兼容存量实现，不是新插件继续写入
-旧目录的理由。
+## 新增插件流程
 
-## 最重要的提交规则
+1. 在 `plugins.v3/<插件ID小写>/__init__.py` 写插件主类（继承 `_PluginBase`，类名 = 插件 ID）。
+2. 图标放 `icons/<图标名>.png`。
+3. 在 `package.v3.json` 加条目（`version` 与插件类 `plugin_version` 保持一致，`history` 当前版本置顶）。
+4. 设计文档放 `docs/plans/<插件名>.md`。
 
-- 插件目录名必须是插件主类名的小写形式，主类定义在目录的 `__init__.py`。
-- 新增类和方法需要补充说明职责的注释。
-- `plugin_version`、索引 `version` 和最新 `history` 必须一致。
-- 当前版本历史置顶，所有历史按语义版本降序排列。
-- V3 新代码优先使用 `app.sdk`；不要新增对宿主内部目录布局的无必要依赖。
-- 宿主数据通过 Oper、Chain 或稳定 SDK 访问；不要直接操作宿主 Model，也不要自行持有
-  `SessionFactory` 等裸会话工厂。数据库事务装饰器只用于插件自有表。
-- 插件运行数据写入插件数据目录，不要写回源码目录。
-- V3 第三方依赖写入插件 `pyproject.toml`，不提交插件 `uv.lock`；V1/V2 保留 `requirements.txt`。
-- 第三方依赖安装在宿主共享环境，不能降级或覆盖 MoviePilot 核心依赖，也不要由插件直接执行包管理器。
-- 测试放在仓库根 `tests/v3/<plugin_id>/`，不要放进插件源码目录。
-- 提交前运行 Python 编译、版本门禁、相关测试和 `git diff --check`。
+开发规范参考官方文档：[MoviePilot-Plugins/docs/Plugin_Development.md](https://github.com/jxxghp/MoviePilot-Plugins/blob/main/docs/Plugin_Development.md)。
 
-## 第三方插件仓库
+## 本地开发调试
 
-第三方仓库建议 fork 本项目并保留相同目录和索引结构。MoviePilot 插件市场只读取
-GitHub 仓库的 `main` 分支；仓库地址通过 `PLUGIN_MARKET` 配置，多个地址用逗号
-分隔。
+MoviePilot 实例配置环境变量指向本仓库，插件市场即可发现本地插件：
 
-请勿开发用于破解 MoviePilot 用户认证，或提供色情、赌博等违法违规内容的插件。
+```sh
+export PLUGIN_LOCAL_REPO_PATHS=/path/to/MoviePilot-Plugins-fork
+export PLUGIN_AUTO_RELOAD=true   # 源码变更自动重载
+```
 
-## 常用链接
+最小检查（版本一致 + 语法编译，用 MoviePilot 的 venv）：
 
-- [完整 V3 开发指南](./docs/Plugin_Development.md)
-- [V2 插件迁移到 V3](./docs/V3_Plugin_Adaptation.md)
-- [插件 API 专题](./docs/V3_API_Response_Adaptation.md)
-- [仓库与发布指南](./docs/Repository_Guide.md)
-- [FAQ 索引](./docs/FAQ.md)
-- [插件仓测试说明](./tests/README.md)
-- [MoviePilot-Frontend V3 模块联邦指南](https://github.com/jxxghp/MoviePilot-Frontend/blob/v3/docs/module-federation-guide.md)
+```sh
+../MoviePilot/.venv/bin/python -m compileall plugins.v3/<插件ID小写>
+```
