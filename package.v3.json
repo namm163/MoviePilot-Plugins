@@ -557,5 +557,18 @@
     "history": {
       "v1.0.0": "V3 独立版本：在重命名模板渲染前读取 MediaInfo 并注入技术字段。"
     }
+  },
+  "EndedTVPackScan": {
+    "name": "完结剧集扫描通知",
+    "description": "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。",
+    "labels": "订阅,通知",
+    "version": "1.0.0",
+    "icon": "Moviepilot_A.png",
+    "author": "namm163",
+    "level": 1,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v1.0.0": "首次发布：基于站点完结列表页 path 过滤（hhanclub/hddolby/pandapt），支持 Telegram/飞书带图通知与已通知去重。"
+    }
   }
 }
