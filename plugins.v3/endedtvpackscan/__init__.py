@@ -30,8 +30,8 @@ class EndedTVPackScan(_PluginBase):
 
     plugin_name = "完结剧集扫描通知"
     plugin_desc = "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。"
-    plugin_icon = "endedtvpackscan.png"
-    plugin_version = "1.1.0"
+    plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/endedtvpackscan.png"
+    plugin_version = "1.1.1"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "endedtvpackscan_"
