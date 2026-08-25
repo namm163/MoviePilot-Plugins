@@ -3,12 +3,13 @@
     "name": "完结剧集扫描通知",
     "description": "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。",
     "labels": "订阅,通知",
-    "version": "1.0.0",
-    "icon": "Moviepilot_A.png",
+    "version": "1.1.0",
+    "icon": "endedtvpackscan.png",
     "author": "namm163",
     "level": 1,
     "system_version": ">=3.0.0",
     "history": {
+      "v1.1.0": "新增已通知记录保留天数配置（默认 7 天，0=永久），扫描时自动清理过期记录；修正作者信息与项目主页；更换插件图标。",
       "v1.0.0": "首次发布：基于站点完结列表页 path 过滤（hhanclub/hddolby/pandapt），支持 Telegram/飞书带图通知与已通知去重。"
     }
   }

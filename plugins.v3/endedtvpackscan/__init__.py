@@ -30,10 +30,10 @@ class EndedTVPackScan(_PluginBase):
 
     plugin_name = "完结剧集扫描通知"
     plugin_desc = "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。"
-    plugin_icon = "Moviepilot_A.png"
-    plugin_version = "1.0.0"
+    plugin_icon = "endedtvpackscan.png"
+    plugin_version = "1.1.0"
     plugin_author = "namm163"
-    author_url = ""
+    author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "endedtvpackscan_"
     plugin_order = 60
     auth_level = 1
@@ -47,6 +47,7 @@ class EndedTVPackScan(_PluginBase):
     _cron = "0 8,20 * * *"
     _channel: Optional[str] = None
     _ended_list_path: dict[str, str] = {}
+    _retain_days = 7  # 已通知记录保留天数，0=永久
 
     # ---------- 生命周期 ----------
 
@@ -58,6 +59,11 @@ class EndedTVPackScan(_PluginBase):
         self._only_free = bool(config.get("only_free"))
         self._cron = config.get("cron") or "0 8,20 * * *"
         self._channel = config.get("channel") or ""
+        # 记录保留天数（0=永久）
+        try:
+            self._retain_days = max(0, int(config.get("retain_days") or 7))
+        except (TypeError, ValueError):
+            self._retain_days = 7
         # 文本配置解析为 dict；用户配了就完全替换默认，没配才用默认
         user_paths = self._parse_list_path(config.get("ended_list_path"))
         self._ended_list_path = user_paths if user_paths else dict(DEFAULT_LIST_PATH)
@@ -78,6 +84,7 @@ class EndedTVPackScan(_PluginBase):
             "only_free": self._only_free,
             "cron": self._cron,
             "channel": self._channel,
+            "retain_days": self._retain_days,
             "ended_list_path": "\n".join(f"{k}={v}" for k, v in self._ended_list_path.items()),
         }
 
@@ -130,16 +137,20 @@ class EndedTVPackScan(_PluginBase):
                     self._col_switch("onlyonce", "立即运行一次"),
                     self._col_switch("only_free", "仅通知免费种子"),
                 ]},
-                # cron + 渠道
+                # cron + 渠道 + 保留天数
                 {"component": "VRow", "content": [
-                    {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
                         {"component": "VCronField", "props": {
                             "model": "cron", "label": "执行周期",
                             "placeholder": "默认 0 8,20 * * *（每天上午/下午）"}}]},
-                    {"component": "VCol", "props": {"cols": 12, "md": 6}, "content": [
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
                         {"component": "VSelect", "props": {
                             "model": "channel", "label": "通知渠道",
                             "items": CHANNEL_ITEMS}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
+                        {"component": "VTextField", "props": {
+                            "model": "retain_days", "label": "记录保留天数",
+                            "placeholder": "默认 7 天，0=永久保留"}}]},
                 ]},
                 # 完结列表页 path
                 {"component": "VRow", "content": [
@@ -164,7 +175,7 @@ class EndedTVPackScan(_PluginBase):
         }
         default_config = {
             "enabled": False, "onlyonce": False, "only_free": False,
-            "cron": "0 8,20 * * *", "channel": "",
+            "cron": "0 8,20 * * *", "channel": "", "retain_days": 7,
             "ended_list_path": "\n".join(f"{k}={v}" for k, v in DEFAULT_LIST_PATH.items()),
         }
         return [form], default_config
@@ -264,6 +275,7 @@ class EndedTVPackScan(_PluginBase):
     def scan(self):
         """遍历配置的完结列表页，扫描当天发布的完结剧集。"""
         logger.info("开始扫描完结剧集")
+        self._cleanup_old_records()
         from app.application.site.sites import SitesHelper
         from app.modules.indexer import IndexerModule
 
@@ -343,6 +355,28 @@ class EndedTVPackScan(_PluginBase):
         )
 
     # ---------- 辅助方法 ----------
+
+    def _cleanup_old_records(self):
+        """清理超过保留天数的已通知记录，避免数据无限增长。
+
+        被清理种子的 pubdate 早于保留天数，不会再命中"当天发布"过滤，
+        因此清理去重键不会导致重复通知。
+        """
+        from datetime import datetime, timedelta
+        if self._retain_days <= 0:
+            return  # 0=永久保留
+        cutoff = (datetime.now() - timedelta(days=self._retain_days)).strftime(
+            "%Y-%m-%d %H:%M:%S")
+        records = self.get_data(self.RECORDS_KEY) or []
+        kept = [r for r in records if (r.get("time") or "") >= cutoff]
+        if len(kept) == len(records):
+            return
+        kept_keys = {r.get("key") for r in kept}
+        removed = len(records) - len(kept)
+        notified = [k for k in (self.get_data(self.NOTIFIED_KEY) or []) if k in kept_keys]
+        self.save_data(self.RECORDS_KEY, kept)
+        self.save_data(self.NOTIFIED_KEY, notified)
+        logger.info(f"已清理 {removed} 条超过 {self._retain_days} 天的已通知记录")
 
     @staticmethod
     def _dedup_key(mediainfo, title: str) -> str:
