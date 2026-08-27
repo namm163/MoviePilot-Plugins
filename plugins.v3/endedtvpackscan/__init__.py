@@ -31,7 +31,7 @@ class EndedTVPackScan(_PluginBase):
     plugin_name = "完结剧集扫描通知"
     plugin_desc = "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。"
     plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/endedtvpackscan.png"
-    plugin_version = "1.1.1"
+    plugin_version = "1.1.2"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "endedtvpackscan_"
@@ -167,8 +167,8 @@ class EndedTVPackScan(_PluginBase):
                             "color": "error", "variant": "tonal"},
                          "text": "重置已通知列表",
                          "events": {"click": {
-                            "api": "plugin/EndedTVPackScan/reset", "method": "post",
-                            "params": {"apikey": "{{ settings.API_TOKEN }}"}},
+                            "api": "plugin/EndedTVPackScan/reset", "method": "get",
+                            "params": {"apikey": settings.API_TOKEN}},
                         }}]},
                 ]},
             ],
@@ -251,24 +251,30 @@ class EndedTVPackScan(_PluginBase):
         """注册重置与删除接口。"""
         return [
             {"path": "/reset", "endpoint": self.reset_notified,
-             "methods": ["POST"], "auth": "bear", "summary": "清空已通知列表"},
+             "methods": ["GET"], "summary": "清空已通知列表"},
             {"path": "/delete", "endpoint": self.delete_record,
-             "methods": ["GET"], "auth": "bear", "summary": "删除单条已通知记录"},
+             "methods": ["GET"], "summary": "删除单条已通知记录"},
         ]
 
-    def reset_notified(self):
+    def reset_notified(self, apikey: str):
         """清空已通知列表。"""
+        from app import schemas
+        if apikey != settings.API_TOKEN:
+            return schemas.Response(success=False, message="API密钥错误")
         self.save_data(self.NOTIFIED_KEY, [])
         self.save_data(self.RECORDS_KEY, [])
-        return {"success": True}
+        return schemas.Response(success=True, message="已清空已通知列表")
 
-    def delete_record(self, key: str):
+    def delete_record(self, key: str, apikey: str):
         """删除单条记录，解除去重可重新通知。"""
+        from app import schemas
+        if apikey != settings.API_TOKEN:
+            return schemas.Response(success=False, message="API密钥错误")
         notified = [k for k in (self.get_data(self.NOTIFIED_KEY) or []) if k != key]
         records = [r for r in (self.get_data(self.RECORDS_KEY) or []) if r.get("key") != key]
         self.save_data(self.NOTIFIED_KEY, notified)
         self.save_data(self.RECORDS_KEY, records)
-        return {"success": True}
+        return schemas.Response(success=True, message="删除成功")
 
     # ---------- 扫描主流程 ----------
 
