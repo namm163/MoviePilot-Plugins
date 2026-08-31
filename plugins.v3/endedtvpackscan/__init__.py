@@ -32,7 +32,7 @@ class EndedTVPackScan(_PluginBase):
     plugin_name = "完结剧集扫描通知"
     plugin_desc = "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。"
     plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/endedtvpackscan.png"
-    plugin_version = "1.1.4"
+    plugin_version = "1.1.5"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "endedtvpackscan_"
@@ -185,7 +185,18 @@ class EndedTVPackScan(_PluginBase):
 
     @staticmethod
     def _record_card(r: dict) -> dict:
-        """单条已通知记录卡片（右上角 X 删除该记录并解除去重）。"""
+        """单条已通知记录卡片（标题点击打开种子页，右上角 X 删除该记录并解除去重）。"""
+        # 标题：有链接时渲染为可点击链接（新标签打开），旧记录无链接保持纯文本
+        if r.get("page_url"):
+            title_comp = {"component": "VCardTitle", "props": {"class": "pa-1 break-words"},
+                          "content": [{"component": "a", "props": {
+                              "href": r["page_url"], "target": "_blank",
+                              "rel": "noopener noreferrer",
+                              "class": "text-primary text-decoration-none"},
+                              "text": r["title"]}]}
+        else:
+            title_comp = {"component": "VCardTitle", "props": {"class": "pa-1 break-words"},
+                          "text": r["title"]}
         return {
             "component": "VCard",
             "content": [
@@ -202,24 +213,13 @@ class EndedTVPackScan(_PluginBase):
                              "src": r.get("poster") or "", "height": 120,
                              "width": 80, "cover": True}}]},
                      {"component": "div", "content": [
-                         {"component": "VCardTitle",
-                          "props": {"class": "pa-1 break-words"}, "text": r["title"]},
+                         title_comp,
                          {"component": "VCardText", "props": {"class": "pa-0 px-2"},
                           "text": f'站点：{r["site"]}  大小：{EndedTVPackScan._format_size(r["size"])}'},
                          {"component": "VCardText", "props": {"class": "pa-0 px-2"},
                           "text": f'促销：{r["volume"]}  剩余免费：{r["freedate_diff"] or "—"}'},
                          {"component": "VCardText", "props": {"class": "pa-0 px-2"},
                           "text": f'通知时间：{r["time"]}'},
-                         # 打开种子页（新标签）；旧记录无链接时禁用
-                         {"component": "VBtn", "props": {
-                             "href": r.get("page_url") or "",
-                             "target": "_blank",
-                             "rel": "noopener noreferrer",
-                             "variant": "tonal", "color": "primary", "size": "small",
-                             "prepend-icon": "mdi-open-in-new",
-                             "class": "mt-2 text-none",
-                             "disabled": not r.get("page_url")},
-                          "text": "打开种子页"},
                      ]},
                  ]},
             ],
