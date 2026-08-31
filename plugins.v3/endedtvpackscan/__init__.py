@@ -10,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from app.plugins import _PluginBase
 from app.sdk.config import settings
 from app.sdk.logging import logger
+from app.sdk.string import StringUtils
 
 # 内置三站完结列表页 path（实测），用户可在配置覆盖/补充
 DEFAULT_LIST_PATH = {
@@ -31,7 +32,7 @@ class EndedTVPackScan(_PluginBase):
     plugin_name = "完结剧集扫描通知"
     plugin_desc = "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。"
     plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/endedtvpackscan.png"
-    plugin_version = "1.1.2"
+    plugin_version = "1.1.3"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "endedtvpackscan_"
@@ -204,7 +205,7 @@ class EndedTVPackScan(_PluginBase):
                          {"component": "VCardTitle",
                           "props": {"class": "pa-1 break-words"}, "text": r["title"]},
                          {"component": "VCardText", "props": {"class": "pa-0 px-2"},
-                          "text": f'站点：{r["site"]}  大小：{r["size"]}'},
+                          "text": f'站点：{r["site"]}  大小：{EndedTVPackScan._format_size(r["size"])}'},
                          {"component": "VCardText", "props": {"class": "pa-0 px-2"},
                           "text": f'促销：{r["volume"]}  剩余免费：{r["freedate_diff"] or "—"}'},
                          {"component": "VCardText", "props": {"class": "pa-0 px-2"},
@@ -362,6 +363,16 @@ class EndedTVPackScan(_PluginBase):
 
     # ---------- 辅助方法 ----------
 
+    @staticmethod
+    def _format_size(size) -> str:
+        """字节大小格式化为紧凑可读格式（如 31.38G），空值/异常返回空串。"""
+        if size in (None, ""):
+            return ""
+        try:
+            return StringUtils.str_filesize(size)
+        except Exception:
+            return str(size)
+
     def _cleanup_old_records(self):
         """清理超过保留天数的已通知记录，避免数据无限增长。
 
@@ -419,7 +430,7 @@ class EndedTVPackScan(_PluginBase):
         is_free = factor is not None and float(factor) == 0
         volume = getattr(torrent, "volume_factor", None) or ("Free" if is_free else "")
         freedate = getattr(torrent, "freedate_diff", None) or "—"
-        size = getattr(torrent, "size", None) or ""
+        size = EndedTVPackScan._format_size(getattr(torrent, "size", None))
         seeders = getattr(torrent, "seeders", None) or 0
         peers = getattr(torrent, "peers", None) or 0
         return (
@@ -440,7 +451,7 @@ class EndedTVPackScan(_PluginBase):
             "title": getattr(mediainfo, "title", None) or torrent.title,
             "poster": self._poster_url(mediainfo) or "",
             "site": domain,
-            "size": getattr(torrent, "size", "") or "",
+            "size": self._format_size(getattr(torrent, "size", None)),
             "volume": getattr(torrent, "volume_factor", "") or "",
             "freedate_diff": getattr(torrent, "freedate_diff", "") or "",
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
