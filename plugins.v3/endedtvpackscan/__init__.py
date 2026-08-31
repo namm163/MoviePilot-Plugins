@@ -32,7 +32,7 @@ class EndedTVPackScan(_PluginBase):
     plugin_name = "完结剧集扫描通知"
     plugin_desc = "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。"
     plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/endedtvpackscan.png"
-    plugin_version = "1.1.3"
+    plugin_version = "1.1.4"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "endedtvpackscan_"
@@ -210,6 +210,16 @@ class EndedTVPackScan(_PluginBase):
                           "text": f'促销：{r["volume"]}  剩余免费：{r["freedate_diff"] or "—"}'},
                          {"component": "VCardText", "props": {"class": "pa-0 px-2"},
                           "text": f'通知时间：{r["time"]}'},
+                         # 打开种子页（新标签）；旧记录无链接时禁用
+                         {"component": "VBtn", "props": {
+                             "href": r.get("page_url") or "",
+                             "target": "_blank",
+                             "rel": "noopener noreferrer",
+                             "variant": "tonal", "color": "primary", "size": "small",
+                             "prepend-icon": "mdi-open-in-new",
+                             "class": "mt-2 text-none",
+                             "disabled": not r.get("page_url")},
+                          "text": "打开种子页"},
                      ]},
                  ]},
             ],
@@ -452,6 +462,7 @@ class EndedTVPackScan(_PluginBase):
             "poster": self._poster_url(mediainfo) or "",
             "site": domain,
             "size": self._format_size(getattr(torrent, "size", None)),
+            "page_url": getattr(torrent, "page_url", "") or "",
             "volume": getattr(torrent, "volume_factor", "") or "",
             "freedate_diff": getattr(torrent, "freedate_diff", "") or "",
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
