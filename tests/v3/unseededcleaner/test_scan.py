@@ -11,7 +11,7 @@ class TestSkeleton:
     def test_class_attributes(self):
         assert UnseededCleaner.plugin_name == "未做种清理"
         assert UnseededCleaner.plugin_config_prefix == "unseededcleaner_"
-        assert UnseededCleaner.plugin_version == "1.0.1"
+        assert UnseededCleaner.plugin_version == "1.0.2"
 
     def test_get_state_always_true(self):
         """手动工具插件，无后台逻辑，安装即就绪。"""
@@ -19,7 +19,7 @@ class TestSkeleton:
 
     def test_get_form_returns_vuetify(self):
         forms, default = make_plugin().get_form()
-        assert default == {"scan_dirs": "", "exclude_keywords": "", "notify": False}
+        assert default == {"scan_dirs": "", "exclude_keywords": "", "notify": False, "auto_drill": True}
         assert forms[0]["component"] == "VForm"
 
 
@@ -72,6 +72,14 @@ class TestIsExcluded:
         assert plugin._is_excluded(".Trash-1000")
         assert not plugin._is_excluded("normal")
 
+    def test_at_prefix_system_dir_excluded(self):
+        """QNAP @ 前缀系统目录（@Recently-Snapshot）不参与扫描。"""
+        plugin = make_plugin()
+        plugin._exclude_keywords = []
+        assert plugin._is_excluded("@Recently-Snapshot")
+        assert plugin._is_excluded("@appshare")
+        assert not plugin._is_excluded("9kg")
+
 
 # ---------- 扫描流程 ----------
 import os
@@ -100,6 +108,7 @@ def make_scanned_plugin(tmp_path, monkeypatch, torrents=None, error=False):
     plugin._scan_dirs = [str(tmp_path)]
     plugin._exclude_keywords = []
     plugin._notify = False
+    plugin._auto_drill = True
     return plugin, store
 
 
@@ -119,7 +128,7 @@ class TestScan:
         assert len(scan["roots"]) == 1
         units = scan["roots"][0]["units"]
         assert [u["name"] for u in units] == ["orphan-pack"]
-        assert units[0]["size"] == 20 and units[0]["sized"] is True
+        assert units[0]["size"] >= 20 and units[0]["sized"] is True
 
     def test_rpc_error_aborts_without_result(self, tmp_path, monkeypatch):
         (tmp_path / "orphan").mkdir()
@@ -181,6 +190,49 @@ class TestScan:
         assert len(scan["roots"]) == 2
         assert [u["name"] for u in scan["roots"][0]["units"]] == ["orphan"]
         assert scan["roots"][1]["units"] == []
+
+
+class TestAutoDrill:
+    def test_deep_deleted_seed_found(self, tmp_path, monkeypatch):
+        """复刻真机场景：分类目录下多个作品，删种的深层目录能被找到，做种邻居被跳过。"""
+        guoman = tmp_path / "series" / "国漫"
+        guoman.mkdir(parents=True)
+        deleted = guoman / "Perfect.World.S01.2021"
+        deleted.mkdir()
+        (deleted / "e01.mkv").write_bytes(b"x" * 10)
+        seeded = guoman / "别的作品"
+        seeded.mkdir()
+        (seeded / "e01.mkv").write_bytes(b"x" * 10)
+        torrents = [SimpleNamespace(download_dir=str(guoman), name="别的作品")]
+        plugin, store = make_scanned_plugin(tmp_path, monkeypatch, torrents)
+        plugin._run_scan()
+        units = store[SCAN_KEY]["roots"][0]["units"]
+        assert [u["name"] for u in units] == ["Perfect.World.S01.2021"]
+
+    def test_drill_disabled_keeps_shallow_behavior(self, tmp_path, monkeypatch):
+        """关闭下钻：深层删种目录不被单独发现（旧行为，series 整体被保护）。"""
+        guoman = tmp_path / "series" / "国漫"
+        guoman.mkdir(parents=True)
+        deleted = guoman / "Perfect.World"
+        deleted.mkdir()
+        seeded = guoman / "别的作品"
+        seeded.mkdir()
+        torrents = [SimpleNamespace(download_dir=str(guoman), name="别的作品")]
+        plugin, store = make_scanned_plugin(tmp_path, monkeypatch, torrents)
+        plugin._auto_drill = False
+        plugin._run_scan()
+        units = store[SCAN_KEY]["roots"][0]["units"]
+        # 一级子项 series 整体受保护（别的作用于其内部），无单元
+        assert units == []
+
+    def test_no_seed_tree_lists_shallow_only(self, tmp_path, monkeypatch):
+        """整树无种子：退化为一级子项（不递归整棵树防海量误报）。"""
+        (tmp_path / "a").mkdir()
+        (tmp_path / "a" / "deep").mkdir()   # 不应被单独列出
+        plugin, store = make_scanned_plugin(tmp_path, monkeypatch)
+        plugin._run_scan()
+        names = [u["name"] for u in store[SCAN_KEY]["roots"][0]["units"]]
+        assert names == ["a"]
 
 
 class TestScanApi:

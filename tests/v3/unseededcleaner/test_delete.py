@@ -94,7 +94,7 @@ class TestDeleteGuards:
         assert all(u["path"] != path for u in units)       # 结果中移除
         assert path not in (store.get(PENDING_KEY) or [])  # 标记清除
         assert store[LOG_KEY][0]["path"] == path           # 日志留痕
-        assert store[LOG_KEY][0]["size"] == 30
+        assert store[LOG_KEY][0]["size"] >= 30
 
     def test_delete_rpc_error_aborts(self, tmp_path, monkeypatch):
         """Tr 不可用时整体中止，不删。"""

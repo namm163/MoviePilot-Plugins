@@ -1,10 +1,11 @@
-"""核心纯函数测试：路径规范化、保护集合、双向前缀匹配、大小统计。"""
+"""核心纯函数测试：路径规范化、保护集合、双向前缀匹配、大小统计、种子祖先集合。"""
 import os
 
 from types import SimpleNamespace
 
 from app.plugins.unseededcleaner import (
     build_protected_paths,
+    build_seeded_ancestors,
     format_size,
     get_path_size,
     is_unit_protected,
@@ -75,7 +76,8 @@ class TestGetPathSize:
     def test_file(self, tmp_path):
         f = tmp_path / "movie.mkv"
         f.write_bytes(b"x" * 1024)
-        assert get_path_size(str(f)) == 1024
+        # st_blocks 口径：块对齐（通常 4096），不小于写入字节数
+        assert get_path_size(str(f)) >= 1024
 
     def test_directory_tree(self, tmp_path):
         d = tmp_path / "pack"
@@ -84,7 +86,20 @@ class TestGetPathSize:
         sub = d / "sub"
         sub.mkdir()
         (sub / "b.mkv").write_bytes(b"x" * 50)
-        assert get_path_size(str(d)) == 150
+        assert get_path_size(str(d)) >= 150
 
     def test_missing_path_returns_zero(self, tmp_path):
         assert get_path_size(str(tmp_path / "no-such")) == 0
+
+
+class TestBuildSeededAncestors:
+    def test_multi_level_ancestors(self):
+        ancestors = build_seeded_ancestors({"/m/series/国漫/作品A"})
+        assert "/m/series/国漫" in ancestors
+        assert "/m/series" in ancestors
+        assert "/m" in ancestors
+        # 种子路径本身不在祖先集合中
+        assert "/m/series/国漫/作品A" not in ancestors
+
+    def test_empty(self):
+        assert build_seeded_ancestors(set()) == set()

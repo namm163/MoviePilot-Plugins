@@ -21,12 +21,13 @@
   "name": "未做种清理",
   "description": "扫描下载根目录中已不在 Transmission 做种的内容，页面查看与两步确认删除，释放磁盘空间。",
   "labels": "PT,存储",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "icon": "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png",
   "author": "namm163",
   "level": 1,
   "system_version": ">=3.0.0",
   "history": {
+   "v1.0.2": "自动下钻找种子层（深层删种目录可发现，默认开启，可关）；大小统计改为磁盘占用口径（压缩卷不再虚高）；排除 @ 前缀 NAS 系统目录。",
    "v1.0.1": "隐藏目录/文件（. 开头，如 .@upload_cache）不再列入扫描结果。",
    "v1.0.0": "首次发布：两段式扫描（秒级出名单、后台补大小）、双向前缀保护匹配、两步确认删除与四道安全校验。"
   }

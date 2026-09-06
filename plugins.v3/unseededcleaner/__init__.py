@@ -6,7 +6,7 @@
 import os
 import threading
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
 from app.plugins import _PluginBase
 from app.sdk.config import settings
@@ -41,6 +41,20 @@ def build_protected_paths(torrents: list) -> set:
     return protected
 
 
+def build_seeded_ancestors(protected_paths: set) -> set:
+    """保护路径集合 → 各级父目录集合（用于下钻导航：子树内有种子的目录）。
+
+    例：保护路径 /m/series/国漫/作品A → seeded_ancestors 含 /m/series/国漫、/m/series、/m。
+    """
+    ancestors = set()
+    for p in protected_paths:
+        d = os.path.dirname(p)
+        while d and d != os.sep:
+            ancestors.add(d)
+            d = os.path.dirname(d)
+    return ancestors
+
+
 def is_unit_protected(unit_path: str, protected_paths: set) -> bool:
     """双向前缀匹配：单元内有种子，或单元位于种子路径内部，均受保护。
 
@@ -59,14 +73,20 @@ def is_unit_protected(unit_path: str, protected_paths: set) -> bool:
 
 
 def get_path_size(path: str) -> int:
-    """统计文件/目录树总字节数；不可读项按 0 跳过，不抛异常。"""
+    """统计文件/目录树的实际磁盘占用（st_blocks 口径，与 du 默认一致）。
+
+    压缩卷/稀疏文件不虚高；不可读项按 0 跳过，不抛异常。
+    """
     if os.path.isfile(path):
-        return os.path.getsize(path)
+        try:
+            return os.stat(path).st_blocks * 512
+        except OSError:
+            return 0
     total = 0
     for root, _dirs, files in os.walk(path, onerror=lambda e: None):
         for f in files:
             try:
-                total += os.path.getsize(os.path.join(root, f))
+                total += os.stat(os.path.join(root, f)).st_blocks * 512
             except OSError:
                 continue
     return total
@@ -88,7 +108,7 @@ class UnseededCleaner(_PluginBase):
     plugin_name = "未做种清理"
     plugin_desc = "扫描下载根目录中已不在 Transmission 做种的内容，查看与删除释放空间。"
     plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png"
-    plugin_version = "1.0.1"
+    plugin_version = "1.0.2"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "unseededcleaner_"
@@ -101,6 +121,7 @@ class UnseededCleaner(_PluginBase):
     _scan_dirs: list = []
     _exclude_keywords: list = []
     _notify = False
+    _auto_drill = True
 
     # ---------- 生命周期 ----------
 
@@ -110,6 +131,7 @@ class UnseededCleaner(_PluginBase):
         self._scan_dirs = self._parse_lines(config.get("scan_dirs"))
         self._exclude_keywords = self._parse_lines(config.get("exclude_keywords"))
         self._notify = bool(config.get("notify"))
+        self._auto_drill = bool(config.get("auto_drill", True))
 
     @staticmethod
     def _parse_lines(text) -> list:
@@ -133,8 +155,8 @@ class UnseededCleaner(_PluginBase):
 
     def _is_excluded(self, name: str) -> bool:
         """单元名命中隐藏目录、内置排除或用户关键字（小写包含匹配）。"""
-        if name.startswith("."):
-            # 隐藏目录/文件（如 .@upload_cache、.Trash）不参与扫描
+        if name.startswith((".", "@")):
+            # 隐藏目录/文件（.@upload_cache）与 NAS 系统目录（@Recently-Snapshot）不参与扫描
             return True
         lower = name.lower()
         if any(k in lower for k in BUILTIN_EXCLUDES):
@@ -144,7 +166,7 @@ class UnseededCleaner(_PluginBase):
     # ---------- 配置页 ----------
 
     def get_form(self) -> tuple[list[dict], dict[str, Any]]:
-        """配置页：下载根目录 + 排除关键字 + 通知开关。"""
+        """配置页：下载根目录 + 排除关键字 + 通知开关 + 下钻开关。"""
         form = {
             "component": "VForm",
             "content": [
@@ -163,9 +185,14 @@ class UnseededCleaner(_PluginBase):
                         {"component": "VSwitch", "props": {
                             "model": "notify", "label": "扫描完成通知"}}]},
                 ]},
+                {"component": "VRow", "content": [
+                    {"component": "VCol", "props": {"cols": 12, "md": 8}, "content": [
+                        {"component": "VSwitch", "props": {
+                            "model": "auto_drill", "label": "自动下钻找种子层"}}]},
+                ]},
             ],
         }
-        return [form], {"scan_dirs": "", "exclude_keywords": "", "notify": False}
+        return [form], {"scan_dirs": "", "exclude_keywords": "", "notify": False, "auto_drill": True}
 
     @staticmethod
     def get_render_mode() -> tuple:
@@ -323,7 +350,9 @@ class UnseededCleaner(_PluginBase):
                 self._set_status("scan", "error", message="获取种子列表失败，本次扫描中止")
                 return
             protected = build_protected_paths(torrents)
-            roots = [{"root": normalize_path(d), **self._collect_unseeded(d, protected)}
+            seeded_ancestors = build_seeded_ancestors(protected)
+            roots = [{"root": normalize_path(d),
+                      **self._collect_unseeded(d, protected, seeded_ancestors)}
                      for d in self._scan_dirs]
             scan = {
                 "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -340,33 +369,89 @@ class UnseededCleaner(_PluginBase):
             logger.error(f"未做种扫描失败：{e}")
             self._set_status("scan", "error", message=f"扫描异常：{e}")
 
-    def _collect_unseeded(self, scan_dir: str, protected: set) -> dict:
-        """收集扫描根下未做种的一级子项（大小暂不统计）。"""
-        scan_dir = normalize_path(scan_dir)
-        if not os.path.isdir(scan_dir):
-            logger.warn(f"扫描根目录不存在：{scan_dir}")
+    def _collect_unseeded(self, scan_dir: str, protected: set,
+                          seeded_ancestors: Optional[set] = None) -> dict:
+        """收集扫描根下的未做种内容单元。
+
+        auto_drill 开启：递归下钻子树内有种子的目录，删种遗留的深层目录也能发现；
+        整树无种子时退化为一级子项（防海量误报，交人工判别）。
+        auto_drill 关闭：仅一级子项（旧行为）。
+        """
+        root = normalize_path(scan_dir)
+        if not os.path.isdir(root):
+            logger.warn(f"扫描根目录不存在：{root}")
             return {"missing": True, "units": []}
+        if self._auto_drill and seeded_ancestors is not None and root in seeded_ancestors:
+            units = self._drill_units(root, protected, seeded_ancestors)
+        else:
+            units = self._shallow_units(root, protected)
+        return {"units": units}
+
+    def _shallow_units(self, root: str, protected: set) -> list:
+        """一级子项收集：单元 = 扫描根直接子项，受保护（双向前缀）的跳过。"""
         units = []
-        try:
-            entries = list(os.scandir(scan_dir))
-        except OSError as e:
-            logger.warn(f"扫描根目录不可读：{scan_dir}：{e}")
-            return {"units": []}
-        for entry in entries:
+        for entry in self._iter_root(root):
             if self._is_excluded(entry.name):
                 continue
-            unit_path = normalize_path(entry.path)
+            path = normalize_path(entry.path)
+            if is_unit_protected(path, protected):
+                continue
             try:
-                if is_unit_protected(unit_path, protected):
-                    continue
-                units.append({
-                    "path": unit_path, "name": entry.name,
-                    "type": "dir" if entry.is_dir(follow_symlinks=False) else "file",
-                    "size": None, "sized": False,
-                })
+                is_dir = entry.is_dir(follow_symlinks=False)
             except OSError as e:
                 logger.warn(f"无法读取 {entry.path}：{e}")
-        return {"units": units}
+                continue
+            unit = self._make_unit(entry, path, is_dir)
+            if unit:
+                units.append(unit)
+        return units
+
+    def _drill_units(self, dir_path: str, protected: set, seeded_ancestors: set) -> list:
+        """递归下钻：仅展开子树内有种子的目录。
+
+        规则：条目本身是保护路径（做种中）→ 跳过；子树内有种子的目录 → 继续下钻；
+        子树内无种子的目录 / 非保护文件 → 删种遗留，列为单元。
+        """
+        units = []
+        for entry in self._iter_root(dir_path):
+            if self._is_excluded(entry.name):
+                continue
+            path = normalize_path(entry.path)
+            if path in protected:
+                continue
+            try:
+                is_dir = entry.is_dir(follow_symlinks=False)
+            except OSError as e:
+                logger.warn(f"无法读取 {entry.path}：{e}")
+                continue
+            if is_dir and path in seeded_ancestors:
+                units.extend(self._drill_units(path, protected, seeded_ancestors))
+            else:
+                unit = self._make_unit(entry, path, is_dir)
+                if unit:
+                    units.append(unit)
+        return units
+
+    @staticmethod
+    def _iter_root(dir_path: str) -> list:
+        """列目录条目；不可读返回空并告警（单目录故障不影响全局）。"""
+        try:
+            return list(os.scandir(dir_path))
+        except OSError as e:
+            logger.warn(f"目录不可读：{dir_path}：{e}")
+            return []
+
+    def _make_unit(self, entry, path: str, is_dir: bool) -> Optional[dict]:
+        """构造单元 dict；不可读条目返回 None（调用方过滤）。"""
+        try:
+            return {
+                "path": path, "name": entry.name,
+                "type": "dir" if is_dir else "file",
+                "size": None, "sized": False,
+            }
+        except OSError as e:
+            logger.warn(f"无法读取 {entry.path}：{e}")
+            return None
 
     def _size_units(self, scan: dict) -> None:
         """第二段：逐单元统计大小，每 5 项落库一次（页面可中途看到进度）。"""
