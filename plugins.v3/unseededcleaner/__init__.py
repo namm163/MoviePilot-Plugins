@@ -231,7 +231,12 @@ class UnseededCleaner(_PluginBase):
             logger.warn(f"扫描根目录不存在：{scan_dir}")
             return {"missing": True, "units": []}
         units = []
-        for entry in os.scandir(scan_dir):
+        try:
+            entries = list(os.scandir(scan_dir))
+        except OSError as e:
+            logger.warn(f"扫描根目录不可读：{scan_dir}：{e}")
+            return {"units": []}
+        for entry in entries:
             if self._is_excluded(entry.name):
                 continue
             unit_path = normalize_path(entry.path)
@@ -265,6 +270,7 @@ class UnseededCleaner(_PluginBase):
         if not self._notify or total_units <= 0:
             return
         from app.schemas.types import MessageType
+        # 读取最终落盘版本（含渐进统计完成后的大小）
         scan = self.get_data(SCAN_KEY) or {}
         total_size = sum(u.get("size") or 0
                          for r in scan.get("roots", []) for u in r["units"])

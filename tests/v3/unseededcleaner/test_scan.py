@@ -91,6 +91,7 @@ def make_scanned_plugin(tmp_path, monkeypatch, torrents=None, error=False):
     plugin._get_transmission = lambda: FakeTr(torrents, error)
     plugin._scan_dirs = [str(tmp_path)]
     plugin._exclude_keywords = []
+    plugin._notify = False
     return plugin, store
 
 
@@ -151,6 +152,27 @@ class TestScan:
         scan = store[SCAN_KEY]
         assert scan["roots"][0].get("missing") is True
         assert scan["roots"][0]["units"] == []
+
+    def test_unreadable_root_does_not_abort_scan(self, tmp_path, monkeypatch):
+        """单根不可读只影响该根，其他根正常扫描。"""
+        good = tmp_path / "good"; good.mkdir()
+        (good / "orphan").mkdir()
+        bad = tmp_path / "bad"; bad.mkdir()
+        # 用 monkeypatch 替换 os.scandir，对 bad 路径抛 OSError
+        _orig_scandir = os.scandir
+        def fake_scandir(path):
+            if os.path.normpath(path) == os.path.normpath(str(bad)):
+                raise OSError("Permission denied")
+            return _orig_scandir(path)
+        monkeypatch.setattr(os, "scandir", fake_scandir)
+        plugin, store = make_scanned_plugin(tmp_path, monkeypatch)
+        plugin._scan_dirs = [str(good), str(bad)]
+        plugin._run_scan()
+        scan = store[SCAN_KEY]
+        assert store[STATUS_KEY]["status"] == "done"
+        assert len(scan["roots"]) == 2
+        assert [u["name"] for u in scan["roots"][0]["units"]] == ["orphan"]
+        assert scan["roots"][1]["units"] == []
 
 
 class TestScanApi:
