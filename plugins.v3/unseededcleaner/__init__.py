@@ -330,3 +330,109 @@ class UnseededCleaner(_PluginBase):
             return err
         from app import schemas
         return schemas.Response(success=True)
+
+    # ---------- 两步删除 ----------
+
+    def _unit_in_last_scan(self, path: str) -> bool:
+        """校验①白名单：路径必须存在于最近扫描结果。"""
+        scan = self.get_data(SCAN_KEY) or {}
+        return any(u["path"] == path
+                   for r in scan.get("roots", []) for u in r["units"])
+
+    def _is_in_scan_dirs(self, path: str) -> bool:
+        """校验②范围：路径必须位于某个扫描根目录之下（防逃逸）。"""
+        for d in self._scan_dirs:
+            root = normalize_path(d)
+            if path == root or path.startswith(root + os.sep):
+                return True
+        return False
+
+    def api_mark(self, apikey: str, path: str = ""):
+        """两步删除第一步：标记/取消（须在扫描结果内）。"""
+        err = self._check_apikey(apikey)
+        if err:
+            return err
+        from app import schemas
+        if not path or not self._unit_in_last_scan(path):
+            return schemas.Response(success=False, message="该路径不在扫描结果中")
+        pending = set(self.get_data(PENDING_KEY) or [])
+        if path in pending:
+            pending.discard(path)
+            msg = "已取消标记"
+        else:
+            pending.add(path)
+            msg = "已标记，点击红色「确认删除」执行删除"
+        self.save_data(PENDING_KEY, sorted(pending))
+        return schemas.Response(success=True, message=msg)
+
+    def api_delete(self, apikey: str, path: str = ""):
+        """两步删除第二步：前置校验后启动后台删除。"""
+        err = self._check_apikey(apikey)
+        if err:
+            return err
+        from app import schemas
+        if not path:
+            return schemas.Response(success=False, message="参数错误")
+        if not self._unit_in_last_scan(path):
+            return schemas.Response(success=False, message="该路径不在扫描结果中")
+        if path not in (self.get_data(PENDING_KEY) or []):
+            return schemas.Response(success=False, message="请先点击「删除」标记")
+        if not self._lock.acquire(blocking=False):
+            return schemas.Response(success=False, message="已有扫描/删除正在进行中")
+        threading.Thread(target=self._guarded_delete, args=(path,), daemon=True).start()
+        return schemas.Response(success=True, message="删除已启动")
+
+    def _guarded_delete(self, path: str) -> None:
+        """带锁删除：范围校验 + 实时保护校验 + 删除 + 留痕（锁由调用方释放）。"""
+        import shutil
+        try:
+            name = os.path.basename(path)
+            self._set_status("delete", "running", f"正在删除 {name}…")
+            if not self._is_in_scan_dirs(path):
+                self._set_status("delete", "error", message=f"路径越界，拒绝删除：{path}")
+                return
+            tr = self._get_transmission()
+            if not tr:
+                self._set_status("delete", "error", message="Transmission 不可用，中止删除")
+                return
+            torrents, error = tr.get_torrents()
+            if error:
+                self._set_status("delete", "error", message="获取种子列表失败，中止删除")
+                return
+            if is_unit_protected(path, build_protected_paths(torrents)):
+                self._set_status("delete", "error",
+                                 message=f"该路径正被种子占用，已跳过：{path}")
+                return
+            size = get_path_size(path)
+            if os.path.isdir(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+            self._remove_from_scan(path)
+            self._remove_pending(path)
+            self._append_delete_log(path, size)
+            self._set_status("delete", "done", f"已删除 {name}（{format_size(size)}）")
+        except Exception as e:
+            logger.error(f"删除失败 {path}：{e}")
+            self._set_status("delete", "error", message=f"删除失败：{e}")
+        finally:
+            self._lock.release()
+
+    def _remove_from_scan(self, path: str) -> None:
+        """从扫描结果中移除已删单元。"""
+        scan = self.get_data(SCAN_KEY) or {}
+        for root in scan.get("roots", []):
+            root["units"] = [u for u in root["units"] if u["path"] != path]
+        self.save_data(SCAN_KEY, scan)
+
+    def _remove_pending(self, path: str) -> None:
+        """清除删除标记。"""
+        pending = [p for p in (self.get_data(PENDING_KEY) or []) if p != path]
+        self.save_data(PENDING_KEY, pending)
+
+    def _append_delete_log(self, path: str, size: int) -> None:
+        """追加删除记录，仅保留最近 DELETE_LOG_LIMIT 条。"""
+        log = self.get_data(LOG_KEY) or []
+        log.append({"path": path, "size": size,
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
+        self.save_data(LOG_KEY, log[-DELETE_LOG_LIMIT:])
