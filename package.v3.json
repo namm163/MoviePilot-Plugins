@@ -16,5 +16,18 @@
       "v1.1.1": "图标改为完整 URL，修复第三方插件仓图标无法通过 plugin_icon 目录加载的问题。",
       "v1.0.0": "首次发布：基于站点完结列表页 path 过滤（hhanclub/hddolby/pandapt），支持 Telegram/飞书带图通知与已通知去重。"
     }
+  },
+  "UnseededCleaner": {
+    "name": "未做种清理",
+    "description": "扫描下载根目录中已不在 Transmission 做种的内容，页面查看与两步确认删除，释放磁盘空间。",
+    "labels": "PT,存储",
+    "version": "1.0.0",
+    "icon": "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png",
+    "author": "namm163",
+    "level": 1,
+    "system_version": ">=3.0.0",
+    "history": {
+      "v1.0.0": "首次发布：两段式扫描（秒级出名单、后台补大小）、双向前缀保护匹配、两步确认删除与四道安全校验。"
+    }
   }
 }
