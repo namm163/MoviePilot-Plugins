@@ -180,7 +180,7 @@ class UnseededCleaner(_PluginBase):
                     {"component": "VCol", "props": {"cols": 12, "md": 8}, "content": [
                         {"component": "VTextarea", "props": {
                             "model": "exclude_keywords", "label": "额外排除关键字", "rows": 2,
-                            "placeholder": "每行一个，单元名包含即跳过（内置 incomplete/.trash/#recycle/@eaDir）"}}]},
+                            "placeholder": "每行一个，目录名包含即跳过（作用于每一层；内置 incomplete/.trash/#recycle/@eaDir 及 . / @ 开头）"}}]},
                     {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
                         {"component": "VSwitch", "props": {
                             "model": "notify", "label": "扫描完成通知"}}]},
@@ -401,9 +401,7 @@ class UnseededCleaner(_PluginBase):
             except OSError as e:
                 logger.warn(f"无法读取 {entry.path}：{e}")
                 continue
-            unit = self._make_unit(entry, path, is_dir)
-            if unit:
-                units.append(unit)
+            units.append(self._make_unit(entry, path, is_dir))
         return units
 
     def _drill_units(self, dir_path: str, protected: set, seeded_ancestors: set) -> list:
@@ -427,9 +425,7 @@ class UnseededCleaner(_PluginBase):
             if is_dir and path in seeded_ancestors:
                 units.extend(self._drill_units(path, protected, seeded_ancestors))
             else:
-                unit = self._make_unit(entry, path, is_dir)
-                if unit:
-                    units.append(unit)
+                units.append(self._make_unit(entry, path, is_dir))
         return units
 
     @staticmethod
@@ -441,17 +437,13 @@ class UnseededCleaner(_PluginBase):
             logger.warn(f"目录不可读：{dir_path}：{e}")
             return []
 
-    def _make_unit(self, entry, path: str, is_dir: bool) -> Optional[dict]:
-        """构造单元 dict；不可读条目返回 None（调用方过滤）。"""
-        try:
-            return {
-                "path": path, "name": entry.name,
-                "type": "dir" if is_dir else "file",
-                "size": None, "sized": False,
-            }
-        except OSError as e:
-            logger.warn(f"无法读取 {entry.path}：{e}")
-            return None
+    def _make_unit(self, entry, path: str, is_dir: bool) -> dict:
+        """构造单元 dict（entry 已物化，无 IO，不会抛 OSError）。"""
+        return {
+            "path": path, "name": entry.name,
+            "type": "dir" if is_dir else "file",
+            "size": None, "sized": False,
+        }
 
     def _size_units(self, scan: dict) -> None:
         """第二段：逐单元统计大小，每 5 项落库一次（页面可中途看到进度）。"""
