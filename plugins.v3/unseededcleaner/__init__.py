@@ -46,6 +46,7 @@ def is_unit_protected(unit_path: str, protected_paths: set) -> bool:
 
     量级：几百单元 × 几千种子 ≈ 百万级 startswith，秒级内完成，无需优化。
     分隔符边界：/d/a 不是 /d/abc 的前缀保护。
+    入参须已经 normalize_path 规范化（带尾斜杠的单元路径会导致前缀匹配失效）。
     """
     for p in protected_paths:
         if p == unit_path:

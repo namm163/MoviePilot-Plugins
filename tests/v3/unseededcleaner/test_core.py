@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from app.plugins.unseededcleaner import (
     build_protected_paths,
+    format_size,
     get_path_size,
     is_unit_protected,
     normalize_path,
@@ -52,6 +53,23 @@ class TestIsUnitProtected:
         # /d/abc 不因 /d/a 前缀而误保护（分隔符边界）
         assert not is_unit_protected("/d/abc", {"/d/a"})
 
+    def test_matches_second_element_in_set(self):
+        # 命中集合中第二个元素（防实现只查第一个）
+        assert is_unit_protected("/d/b", {"/x/other", "/d/b"})
+
+    def test_no_match_in_multi_element_set(self):
+        assert not is_unit_protected("/d/c", {"/d/a", "/d/b", "/e/f"})
+
+
+class TestFormatSize:
+    def test_empty_values_return_empty_string(self):
+        assert format_size(None) == ""
+        assert format_size("") == ""
+
+    def test_formats_bytes(self):
+        result = format_size(1024 * 1024 * 1024)
+        assert "G" in result and "1" in result
+
 
 class TestGetPathSize:
     def test_file(self, tmp_path):
@@ -67,3 +85,6 @@ class TestGetPathSize:
         sub.mkdir()
         (sub / "b.mkv").write_bytes(b"x" * 50)
         assert get_path_size(str(d)) == 150
+
+    def test_missing_path_returns_zero(self, tmp_path):
+        assert get_path_size(str(tmp_path / "no-such")) == 0
