@@ -169,9 +169,122 @@ class UnseededCleaner(_PluginBase):
         """Vuetify 拼装模式。"""
         return "vuetify", None
 
+    # ---------- 详情页 ----------
+
     def get_page(self) -> list:
-        """详情页（任务 6 实现）。"""
-        return [{"component": "div", "text": "暂无数据"}]
+        """详情页：状态卡片 + 操作按钮 + 按根分组清单 + 删除记录。"""
+        scan = self.get_data(SCAN_KEY) or {}
+        status = self.get_data(STATUS_KEY) or {}
+        pending = set(self.get_data(PENDING_KEY) or [])
+        content = [self._status_card(status, scan), self._action_bar()]
+        for root in scan.get("roots", []):
+            content.append(self._root_card(root, pending))
+        content.append(self._log_panel())
+        return content
+
+    def _status_card(self, status: dict, scan: dict) -> dict:
+        """顶部状态卡片：进行中显示进度，完成显示摘要，出错红色提示。"""
+        inner = []
+        state = status.get("status")
+        if state == "running":
+            inner.append({"component": "VProgressLinear", "props": {"indeterminate": True}})
+            inner.append({"component": "VCardText",
+                          "text": status.get("progress") or "处理中…"})
+        elif state == "error":
+            inner.append({"component": "VCardText", "props": {"class": "text-error"},
+                          "text": f"出错：{status.get('message') or '未知错误'}"})
+        else:
+            units = [u for r in scan.get("roots", []) for u in r["units"]]
+            sized = sum(u.get("size") or 0 for u in units if u.get("sized"))
+            text = (f"上次扫描 {scan.get('scan_time', '—')}："
+                    f"发现 {len(units)} 项未做种，可释放约 {format_size(sized)}"
+                    if scan else "尚未扫描，请配置下载根目录后点击「立即扫描」")
+            inner.append({"component": "VCardText", "text": text})
+        return {"component": "VCard", "props": {"class": "mb-3"}, "content": inner}
+
+    def _btn(self, text: str, api_path: str, params: dict = None, color: str = "primary") -> dict:
+        """生成带 events.click 的按钮（params 自动附带 apikey）。"""
+        merged = {"apikey": settings.API_TOKEN, **(params or {})}
+        return {
+            "component": "VBtn", "props": {"color": color, "size": "small",
+                                           "variant": "tonal", "class": "mr-2"},
+            "text": text,
+            "events": {"click": {"api": f"plugin/UnseededCleaner/{api_path}",
+                                 "method": "get", "params": merged}},
+        }
+
+    def _action_bar(self) -> dict:
+        """操作按钮行：立即扫描 + 刷新。"""
+        return {
+            "component": "div", "props": {"class": "mb-3"},
+            "content": [self._btn("立即扫描", "scan"),
+                        self._btn("刷新", "refresh", color="default")],
+        }
+
+    def _root_card(self, root: dict, pending: set) -> dict:
+        """单个扫描根分组卡片（VWindow 分页，每页 20 项，按大小降序）。"""
+        units = sorted(root.get("units", []),
+                       key=lambda u: u.get("size") or 0, reverse=True)
+        if root.get("missing"):
+            title = f"{root['root']}（目录不存在，请检查配置）"
+        else:
+            sized = sum(u.get("size") or 0 for u in units if u.get("sized"))
+            title = f"{root['root']} — {len(units)} 项 / 已统计 {format_size(sized)}"
+        pages = [units[i:i + 20] for i in range(0, len(units), 20)] or [[]]
+        items = [{
+            "component": "VWindowItem",
+            "props": {"class": "d-flex flex-column gap-2"},
+            "content": [self._unit_card(u, pending) for u in page],
+        } for page in pages]
+        return {
+            "component": "VCard", "props": {"class": "mb-3"},
+            "content": [
+                {"component": "VCardTitle", "props": {"class": "text-subtitle-1"}, "text": title},
+                {"component": "VCardText", "content": [
+                    {"component": "VWindow", "props": {"show-arrows": "hover"}, "content": items}]},
+            ],
+        }
+
+    def _unit_card(self, unit: dict, pending: set) -> dict:
+        """单个未做种单元卡片：名称/大小/路径 + 两步删除按钮。"""
+        path = unit["path"]
+        size_text = format_size(unit.get("size")) if unit.get("sized") else "统计中…"
+        marked = path in pending
+        if marked:
+            buttons = [
+                self._btn("取消标记", "mark", {"path": path}, color="default"),
+                self._btn("确认删除", "delete", {"path": path}, color="error"),
+            ]
+        else:
+            buttons = [self._btn("删除", "mark", {"path": path})]
+        return {
+            "component": "VCard", "props": {"variant": "outlined"},
+            "content": [
+                {"component": "VCardItem", "content": [
+                    {"component": "VCardTitle", "props": {"class": "text-body-1"},
+                     "text": unit["name"]},
+                ]},
+                {"component": "VCardText", "props": {"class": "pb-1"},
+                 "text": f"{size_text} · {unit['type']} · {path}"},
+                {"component": "VCardActions", "content": buttons},
+            ],
+        }
+
+    def _log_panel(self) -> dict:
+        """底部删除记录折叠面板（最近 20 条）。"""
+        log = self.get_data(LOG_KEY) or []
+        rows = [f"{r['time']}  {format_size(r['size'])}  {r['path']}" for r in log[-20:]]
+        return {
+            "component": "VExpansionPanels", "props": {"class": "mt-2"},
+            "content": [{
+                "component": "VExpansionPanel", "content": [
+                    {"component": "VExpansionPanelTitle",
+                     "text": f"删除记录（最近 {len(log)} 条）"},
+                    {"component": "VExpansionPanelText",
+                     "text": "\n".join(rows) if rows else "暂无记录"},
+                ],
+            }],
+        }
 
     # ---------- 下载器 ----------
 
