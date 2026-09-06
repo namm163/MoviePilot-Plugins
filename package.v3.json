@@ -1,33 +1,34 @@
 {
-  "EndedTVPackScan": {
-    "name": "完结剧集扫描通知",
-    "description": "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。",
-    "labels": "订阅,通知",
-    "version": "1.1.5",
-    "icon": "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/endedtvpackscan.png",
-    "author": "namm163",
-    "level": 1,
-    "system_version": ">=3.0.0",
-    "history": {
-      "v1.1.5": "改为点击卡片标题在新标签打开种子详情页，移除「打开种子页」按钮。",
-      "v1.1.4": "详情页卡片增加「打开种子页」按钮，点击新标签打开种子详情链接。",
-      "v1.1.3": "通知与详情页的种子大小由字节数格式化为可读格式（如 31.35G），历史记录展示同步修正。",
-      "v1.1.2": "修复删除/重置接口响应格式，改用标准 Response 模型与 apikey 校验。",
-      "v1.1.1": "图标改为完整 URL，修复第三方插件仓图标无法通过 plugin_icon 目录加载的问题。",
-      "v1.0.0": "首次发布：基于站点完结列表页 path 过滤（hhanclub/hddolby/pandapt），支持 Telegram/飞书带图通知与已通知去重。"
-    }
-  },
-  "UnseededCleaner": {
-    "name": "未做种清理",
-    "description": "扫描下载根目录中已不在 Transmission 做种的内容，页面查看与两步确认删除，释放磁盘空间。",
-    "labels": "PT,存储",
-    "version": "1.0.0",
-    "icon": "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png",
-    "author": "namm163",
-    "level": 1,
-    "system_version": ">=3.0.0",
-    "history": {
-      "v1.0.0": "首次发布：两段式扫描（秒级出名单、后台补大小）、双向前缀保护匹配、两步确认删除与四道安全校验。"
-    }
+ "EndedTVPackScan": {
+  "name": "完结剧集扫描通知",
+  "description": "扫描 PT 站点当天发布的完结连续剧，去重后推送带海报与简介的通知。",
+  "labels": "订阅,通知",
+  "version": "1.1.5",
+  "icon": "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/endedtvpackscan.png",
+  "author": "namm163",
+  "level": 1,
+  "system_version": ">=3.0.0",
+  "history": {
+   "v1.1.5": "改为点击卡片标题在新标签打开种子详情页，移除「打开种子页」按钮。",
+   "v1.1.4": "详情页卡片增加「打开种子页」按钮，点击新标签打开种子详情链接。",
+   "v1.1.3": "通知与详情页的种子大小由字节数格式化为可读格式（如 31.35G），历史记录展示同步修正。",
+   "v1.1.2": "修复删除/重置接口响应格式，改用标准 Response 模型与 apikey 校验。",
+   "v1.1.1": "图标改为完整 URL，修复第三方插件仓图标无法通过 plugin_icon 目录加载的问题。",
+   "v1.0.0": "首次发布：基于站点完结列表页 path 过滤（hhanclub/hddolby/pandapt），支持 Telegram/飞书带图通知与已通知去重。"
   }
+ },
+ "UnseededCleaner": {
+  "name": "未做种清理",
+  "description": "扫描下载根目录中已不在 Transmission 做种的内容，页面查看与两步确认删除，释放磁盘空间。",
+  "labels": "PT,存储",
+  "version": "1.0.1",
+  "icon": "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png",
+  "author": "namm163",
+  "level": 1,
+  "system_version": ">=3.0.0",
+  "history": {
+   "v1.0.1": "隐藏目录/文件（. 开头，如 .@upload_cache）不再列入扫描结果。",
+   "v1.0.0": "首次发布：两段式扫描（秒级出名单、后台补大小）、双向前缀保护匹配、两步确认删除与四道安全校验。"
+  }
+ }
 }

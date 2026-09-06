@@ -64,6 +64,14 @@ class TestIsExcluded:
         plugin._exclude_keywords = ["sample"]
         assert not plugin._is_excluded("某剧.S01.1080p")
 
+    def test_hidden_entry_excluded(self):
+        """隐藏目录/文件（. 开头）不参与扫描（真机干跑发现的 .@upload_cache）。"""
+        plugin = make_plugin()
+        plugin._exclude_keywords = []
+        assert plugin._is_excluded(".@upload_cache")
+        assert plugin._is_excluded(".Trash-1000")
+        assert not plugin._is_excluded("normal")
+
 
 # ---------- 扫描流程 ----------
 import os

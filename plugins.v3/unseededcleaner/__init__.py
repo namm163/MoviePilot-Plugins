@@ -88,7 +88,7 @@ class UnseededCleaner(_PluginBase):
     plugin_name = "未做种清理"
     plugin_desc = "扫描下载根目录中已不在 Transmission 做种的内容，查看与删除释放空间。"
     plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png"
-    plugin_version = "1.0.0"
+    plugin_version = "1.0.1"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "unseededcleaner_"
@@ -132,7 +132,10 @@ class UnseededCleaner(_PluginBase):
         """无后台常驻资源。"""
 
     def _is_excluded(self, name: str) -> bool:
-        """单元名命中内置排除或用户关键字（小写包含匹配）。"""
+        """单元名命中隐藏目录、内置排除或用户关键字（小写包含匹配）。"""
+        if name.startswith("."):
+            # 隐藏目录/文件（如 .@upload_cache、.Trash）不参与扫描
+            return True
         lower = name.lower()
         if any(k in lower for k in BUILTIN_EXCLUDES):
             return True
