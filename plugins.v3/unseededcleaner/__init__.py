@@ -80,3 +80,99 @@ def format_size(size) -> str:
         return StringUtils.str_filesize(size)
     except Exception:
         return str(size)
+
+
+class UnseededCleaner(_PluginBase):
+    """扫描下载根目录中未做种内容，支持两步确认删除。"""
+
+    plugin_name = "未做种清理"
+    plugin_desc = "扫描下载根目录中已不在 Transmission 做种的内容，查看与删除释放空间。"
+    plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png"
+    plugin_version = "1.0.0"
+    plugin_author = "namm163"
+    author_url = "https://github.com/namm163/MoviePilot-Plugins"
+    plugin_config_prefix = "unseededcleaner_"
+    plugin_order = 61
+    auth_level = 1
+
+    # 扫描/删除互斥锁（类级：配置重载不丢锁状态）
+    _lock = threading.Lock()
+
+    _scan_dirs: list = []
+    _exclude_keywords: list = []
+    _notify = False
+
+    # ---------- 生命周期 ----------
+
+    def init_plugin(self, config: dict | None = None) -> None:
+        """读取配置：目录/关键字文本按行解析。"""
+        config = config or {}
+        self._scan_dirs = self._parse_lines(config.get("scan_dirs"))
+        self._exclude_keywords = self._parse_lines(config.get("exclude_keywords"))
+        self._notify = bool(config.get("notify"))
+
+    @staticmethod
+    def _parse_lines(text) -> list:
+        """多行文本解析为非空行列表（忽略注释与首尾空白）。"""
+        if not text:
+            return []
+        return [line.strip() for line in str(text).splitlines()
+                if line.strip() and not line.strip().startswith("#")]
+
+    def get_state(self) -> bool:
+        """手动工具插件，安装即就绪。"""
+        return True
+
+    @staticmethod
+    def get_command() -> list:
+        """不注册远程命令。"""
+        return []
+
+    def stop_service(self) -> None:
+        """无后台常驻资源。"""
+
+    def _is_excluded(self, name: str) -> bool:
+        """单元名命中内置排除或用户关键字（小写包含匹配）。"""
+        lower = name.lower()
+        if any(k in lower for k in BUILTIN_EXCLUDES):
+            return True
+        return any(k and k.lower() in lower for k in self._exclude_keywords)
+
+    # ---------- 配置页 ----------
+
+    def get_form(self) -> tuple:
+        """配置页：下载根目录 + 排除关键字 + 通知开关。"""
+        form = {
+            "component": "VForm",
+            "content": [
+                {"component": "VRow", "content": [
+                    {"component": "VCol", "props": {"cols": 12}, "content": [
+                        {"component": "VTextarea", "props": {
+                            "model": "scan_dirs", "label": "下载根目录", "rows": 4,
+                            "placeholder": "每行一个路径，须配到种子直接存放的那一层\n如 /media4/9kg、/education"}}]},
+                ]},
+                {"component": "VRow", "content": [
+                    {"component": "VCol", "props": {"cols": 12, "md": 8}, "content": [
+                        {"component": "VTextarea", "props": {
+                            "model": "exclude_keywords", "label": "额外排除关键字", "rows": 2,
+                            "placeholder": "每行一个，单元名包含即跳过（内置 incomplete/.trash/#recycle/@eaDir）"}}]},
+                    {"component": "VCol", "props": {"cols": 12, "md": 4}, "content": [
+                        {"component": "VSwitch", "props": {
+                            "model": "notify", "label": "扫描完成通知"}}]},
+                ]},
+            ],
+        }
+        return [form], {"scan_dirs": "", "exclude_keywords": "", "notify": False}
+
+    @staticmethod
+    def get_render_mode() -> tuple:
+        """Vuetify 拼装模式。"""
+        return "vuetify", None
+
+    def get_page(self) -> list:
+        """详情页（任务 6 实现）。"""
+        return [{"component": "div", "text": "暂无数据"}]
+
+    def get_api(self) -> list:
+        """插件 API（任务 4 实现）。"""
+        return []
