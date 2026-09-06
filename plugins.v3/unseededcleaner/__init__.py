@@ -173,6 +173,154 @@ class UnseededCleaner(_PluginBase):
         """详情页（任务 6 实现）。"""
         return [{"component": "div", "text": "暂无数据"}]
 
+    # ---------- 下载器 ----------
+
+    def _get_transmission(self):
+        """取已配置启用的 Transmission 实例（多实例取第一个）。"""
+        from app.application.downloader import DownloaderHelper
+        services = DownloaderHelper().get_services(type_filter="transmission")
+        if not services:
+            return None
+        return next(iter(services.values())).instance
+
+    # ---------- 扫描 ----------
+
+    def _set_status(self, action: str, status: str, progress: str = "", message: str = "") -> None:
+        """更新并持久化动作状态（页面重开恢复显示）。"""
+        self.save_data(STATUS_KEY, {
+            "action": action, "status": status,
+            "progress": progress, "message": message,
+            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        })
+
+    def _run_scan(self) -> None:
+        """两段式扫描：第一段秒级判定名单并落库，第二段渐进统计大小。"""
+        try:
+            self._set_status("scan", "running", "正在获取 Transmission 种子列表…")
+            tr = self._get_transmission()
+            if not tr:
+                self._set_status("scan", "error", message="未找到已启用的 Transmission 下载器")
+                return
+            torrents, error = tr.get_torrents()
+            if error:
+                # 宁可失败不可误判：RPC 出错绝不产出结果
+                self._set_status("scan", "error", message="获取种子列表失败，本次扫描中止")
+                return
+            protected = build_protected_paths(torrents)
+            roots = [{"root": normalize_path(d), **self._collect_unseeded(d, protected)}
+                     for d in self._scan_dirs]
+            scan = {
+                "scan_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "tr_torrent_count": len(torrents),
+                "roots": roots,
+            }
+            self.save_data(SCAN_KEY, scan)     # 第一段产出：名单立即可见
+            self._size_units(scan)             # 第二段：后台补大小
+            total = sum(len(r["units"]) for r in roots)
+            sized = sum(1 for r in roots for u in r["units"] if u.get("sized"))
+            self._set_status("scan", "done", f"扫描完成：{total} 项未做种（大小统计 {sized}/{total}）")
+            self._notify_done(total)
+        except Exception as e:
+            logger.error(f"未做种扫描失败：{e}")
+            self._set_status("scan", "error", message=f"扫描异常：{e}")
+
+    def _collect_unseeded(self, scan_dir: str, protected: set) -> dict:
+        """收集扫描根下未做种的一级子项（大小暂不统计）。"""
+        scan_dir = normalize_path(scan_dir)
+        if not os.path.isdir(scan_dir):
+            logger.warn(f"扫描根目录不存在：{scan_dir}")
+            return {"missing": True, "units": []}
+        units = []
+        for entry in os.scandir(scan_dir):
+            if self._is_excluded(entry.name):
+                continue
+            unit_path = normalize_path(entry.path)
+            try:
+                if is_unit_protected(unit_path, protected):
+                    continue
+                units.append({
+                    "path": unit_path, "name": entry.name,
+                    "type": "dir" if entry.is_dir(follow_symlinks=False) else "file",
+                    "size": None, "sized": False,
+                })
+            except OSError as e:
+                logger.warn(f"无法读取 {entry.path}：{e}")
+        return {"units": units}
+
+    def _size_units(self, scan: dict) -> None:
+        """第二段：逐单元统计大小，每 5 项落库一次（页面可中途看到进度）。"""
+        units = [u for r in scan["roots"] for u in r["units"]]
+        for i, unit in enumerate(units, 1):
+            try:
+                unit["size"] = get_path_size(unit["path"])
+            except OSError as e:
+                logger.warn(f"统计大小失败 {unit['path']}：{e}")
+            unit["sized"] = True
+            if i % 5 == 0 or i == len(units):
+                self.save_data(SCAN_KEY, scan)
+                self._set_status("scan", "running", f"正在统计大小 {i}/{len(units)}…")
+
+    def _notify_done(self, total_units: int) -> None:
+        """扫描完成后按配置发送通知。"""
+        if not self._notify or total_units <= 0:
+            return
+        from app.schemas.types import MessageType
+        scan = self.get_data(SCAN_KEY) or {}
+        total_size = sum(u.get("size") or 0
+                         for r in scan.get("roots", []) for u in r["units"])
+        self.post_message(
+            mtype=MessageType.Plugin, title="未做种清理",
+            text=f"扫描完成：{total_units} 项未做种，可释放约 {format_size(total_size)}",
+        )
+
+    # ---------- 插件 API ----------
+
     def get_api(self) -> list:
-        """插件 API（任务 4 实现）。"""
-        return []
+        """注册扫描/刷新/标记/删除接口。"""
+        return [
+            {"path": "/scan", "endpoint": self.api_scan,
+             "methods": ["GET"], "summary": "立即扫描"},
+            {"path": "/refresh", "endpoint": self.api_refresh,
+             "methods": ["GET"], "summary": "刷新页面数据"},
+            {"path": "/mark", "endpoint": self.api_mark,
+             "methods": ["GET"], "summary": "标记/取消待删除"},
+            {"path": "/delete", "endpoint": self.api_delete,
+             "methods": ["GET"], "summary": "确认删除"},
+        ]
+
+    @staticmethod
+    def _check_apikey(apikey: str):
+        """API 密钥校验，失败返回错误 Response，成功返回 None。"""
+        from app import schemas
+        if apikey != settings.API_TOKEN:
+            return schemas.Response(success=False, message="API密钥错误")
+        return None
+
+    def api_scan(self, apikey: str):
+        """触发后台扫描线程（锁互斥）。"""
+        err = self._check_apikey(apikey)
+        if err:
+            return err
+        from app import schemas
+        if not self._scan_dirs:
+            return schemas.Response(success=False, message="请先在配置中设置下载根目录")
+        if not self._lock.acquire(blocking=False):
+            return schemas.Response(success=False, message="已有扫描/删除正在进行中")
+        threading.Thread(target=self._guarded_scan, daemon=True).start()
+        from app import schemas
+        return schemas.Response(success=True, message="扫描已启动，稍后刷新查看结果")
+
+    def _guarded_scan(self) -> None:
+        """带锁执行扫描（锁由 api_scan 获取，此处释放）。"""
+        try:
+            self._run_scan()
+        finally:
+            self._lock.release()
+
+    def api_refresh(self, apikey: str):
+        """空操作：仅用于触发前端自动刷新页面数据。"""
+        err = self._check_apikey(apikey)
+        if err:
+            return err
+        from app import schemas
+        return schemas.Response(success=True)
