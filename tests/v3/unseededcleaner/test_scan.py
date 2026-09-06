@@ -11,7 +11,7 @@ class TestSkeleton:
     def test_class_attributes(self):
         assert UnseededCleaner.plugin_name == "未做种清理"
         assert UnseededCleaner.plugin_config_prefix == "unseededcleaner_"
-        assert UnseededCleaner.plugin_version == "1.0.2"
+        assert UnseededCleaner.plugin_version == "1.0.3"
 
     def test_get_state_always_true(self):
         """手动工具插件，无后台逻辑，安装即就绪。"""

@@ -108,7 +108,7 @@ class UnseededCleaner(_PluginBase):
     plugin_name = "未做种清理"
     plugin_desc = "扫描下载根目录中已不在 Transmission 做种的内容，查看与删除释放空间。"
     plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png"
-    plugin_version = "1.0.2"
+    plugin_version = "1.0.3"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "unseededcleaner_"
@@ -301,9 +301,12 @@ class UnseededCleaner(_PluginBase):
         }
 
     def _log_panel(self) -> dict:
-        """底部删除记录折叠面板（最近 20 条）。"""
+        """底部删除记录折叠面板（最近 20 条，每行一条 div，避免 \\n 不换行挤成一行）。"""
         log = self.get_data(LOG_KEY) or []
-        rows = [f"{r['time']}  {format_size(r['size'])}  {r['path']}" for r in log[-20:]]
+        rows = [{"component": "div",
+                 "props": {"class": "text-caption text-medium-emphasis py-1"},
+                 "text": f"{r['time']}  {format_size(r['size'])}  {r['path']}"}
+                for r in log[-20:]]
         return {
             "component": "VExpansionPanels", "props": {"class": "mt-2"},
             "content": [{
@@ -311,7 +314,7 @@ class UnseededCleaner(_PluginBase):
                     {"component": "VExpansionPanelTitle",
                      "text": f"删除记录（最近 {len(log)} 条）"},
                     {"component": "VExpansionPanelText",
-                     "text": "\n".join(rows) if rows else "暂无记录"},
+                     "content": rows or [{"component": "div", "text": "暂无记录"}]},
                 ],
             }],
         }
