@@ -71,6 +71,21 @@ class TestGetPage:
         text = str(page)
         assert "确认删除" in text and "取消标记" in text
 
+    def test_marked_unit_pinned_to_pending_card(self, tmp_path, monkeypatch):
+        """已标记单元集中置顶「待确认删除」卡片，并从分组清单移除（免滚动寻找）。"""
+        plugin, store = make_scanned_plugin(tmp_path, monkeypatch)
+        (tmp_path / "orphan-pack").mkdir()
+        plugin._run_scan()
+        from app.runtime.config import settings
+        monkeypatch.setattr(settings, "API_TOKEN", "t", raising=False)
+        path = store[SCAN_KEY]["roots"][0]["units"][0]["path"]
+        plugin.api_mark(apikey="t", path=path)
+        page = plugin.get_page()
+        text = str(page)
+        assert "待确认删除" in text                       # 置顶卡出现
+        assert "1 项" in text                             # 置顶卡含 1 项
+        assert "0 项" in text                             # 分组清单已无该项
+
     def test_status_card_progress(self, tmp_path, monkeypatch):
         plugin, _ = make_scanned_plugin(tmp_path, monkeypatch)
         plugin.save_data(STATUS_KEY, {

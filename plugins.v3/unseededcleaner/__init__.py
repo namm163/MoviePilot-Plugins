@@ -108,7 +108,7 @@ class UnseededCleaner(_PluginBase):
     plugin_name = "未做种清理"
     plugin_desc = "扫描下载根目录中已不在 Transmission 做种的内容，查看与删除释放空间。"
     plugin_icon = "https://raw.githubusercontent.com/namm163/MoviePilot-Plugins/main/icons/unseededcleaner.png"
-    plugin_version = "1.0.3"
+    plugin_version = "1.0.4"
     plugin_author = "namm163"
     author_url = "https://github.com/namm163/MoviePilot-Plugins"
     plugin_config_prefix = "unseededcleaner_"
@@ -202,15 +202,44 @@ class UnseededCleaner(_PluginBase):
     # ---------- 详情页 ----------
 
     def get_page(self) -> list:
-        """详情页：状态卡片 + 操作按钮 + 按根分组清单 + 删除记录。"""
+        """详情页：状态卡片 + 操作按钮 + 待确认删除 + 按根分组清单 + 删除记录。"""
         scan = self.get_data(SCAN_KEY) or {}
         status = self.get_data(STATUS_KEY) or {}
         pending = set(self.get_data(PENDING_KEY) or [])
         content = [self._status_card(status, scan), self._action_bar()]
+        # 已标记单元集中置顶（刷新后红色按钮就在最上方，无需滚动寻找）
+        pending_units = self._split_pending(scan, pending)
+        if pending_units:
+            content.append(self._pending_card(pending_units))
         for root in scan.get("roots", []):
-            content.append(self._root_card(root, pending))
+            content.append(self._root_card(root, set()))
         content.append(self._log_panel())
         return content
+
+    @staticmethod
+    def _split_pending(scan: dict, pending: set) -> list:
+        """把已标记单元从各分组抽出（集中显示，避免两处重复）。"""
+        pending_units = []
+        for root in scan.get("roots", []):
+            units = root.get("units") or []
+            pending_units.extend(u for u in units if u["path"] in pending)
+            root["units"] = [u for u in units if u["path"] not in pending]
+        return pending_units
+
+    def _pending_card(self, units: list) -> dict:
+        """待确认删除置顶卡片（红色调）：每项带取消/确认按钮。"""
+        total = sum(u.get("size") or 0 for u in units if u.get("sized"))
+        return {
+            "component": "VCard",
+            "props": {"class": "mb-3", "color": "error", "variant": "tonal"},
+            "content": [
+                {"component": "VCardTitle", "props": {"class": "text-subtitle-1"},
+                 "text": f"待确认删除 — {len(units)} 项 / 约 {format_size(total)}"},
+                {"component": "VCardText",
+                 "props": {"class": "d-flex flex-column gap-2"},
+                 "content": [self._unit_card(u, {u["path"]}) for u in units]},
+            ],
+        }
 
     def _status_card(self, status: dict, scan: dict) -> dict:
         """顶部状态卡片：进行中显示进度，完成显示摘要，出错红色提示。"""
@@ -562,7 +591,7 @@ class UnseededCleaner(_PluginBase):
         return schemas.Response(success=True, message=msg)
 
     def api_delete(self, apikey: str, path: str = ""):
-        """两步删除第二步：前置校验后启动后台删除。"""
+        """两步删除第二步：前置校验后同步删除（前端转圈等待完成，刷新即见结果）。"""
         err = self._check_apikey(apikey)
         if err:
             return err
@@ -575,8 +604,13 @@ class UnseededCleaner(_PluginBase):
             return schemas.Response(success=False, message="请先点击「删除」标记")
         if not self._lock.acquire(blocking=False):
             return schemas.Response(success=False, message="已有扫描/删除正在进行中")
-        threading.Thread(target=self._guarded_delete, args=(path,), daemon=True).start()
-        return schemas.Response(success=True, message="删除已启动")
+        # 同步执行：单目录删除通常数秒内完成，等完成后返回让前端刷新直接显示结果，
+        # 避免"正在删除"中间态停留在页面（无轮询协议下无法自动消除）
+        self._guarded_delete(path)
+        status = self.get_data(STATUS_KEY) or {}
+        if status.get("status") == "done":
+            return schemas.Response(success=True, message=status.get("progress") or "删除完成")
+        return schemas.Response(success=False, message=status.get("message") or "删除失败，请查看状态")
 
     def _guarded_delete(self, path: str) -> None:
         """带锁删除：范围校验 + 实时保护校验 + 删除 + 留痕（锁由调用方释放）。"""
