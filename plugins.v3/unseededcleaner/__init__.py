@@ -140,7 +140,7 @@ class UnseededCleaner(_PluginBase):
 
     # ---------- 配置页 ----------
 
-    def get_form(self) -> tuple:
+    def get_form(self) -> tuple[list[dict], dict[str, Any]]:
         """配置页：下载根目录 + 排除关键字 + 通知开关。"""
         form = {
             "component": "VForm",

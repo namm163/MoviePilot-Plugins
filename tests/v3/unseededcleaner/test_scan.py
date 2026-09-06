@@ -34,6 +34,11 @@ class TestParseLines:
         plugin.init_plugin({"exclude_keywords": "sample\n\n"})
         assert plugin._exclude_keywords == ["sample"]
 
+    def test_parse_crlf_and_blank_lines(self):
+        plugin = make_plugin()
+        plugin.init_plugin({"scan_dirs": "/media4/9kg\r\n   \r\n/education\r\n"})
+        assert plugin._scan_dirs == ["/media4/9kg", "/education"]
+
     def test_empty_config(self):
         plugin = make_plugin()
         plugin.init_plugin(None)
