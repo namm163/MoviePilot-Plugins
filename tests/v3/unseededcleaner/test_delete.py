@@ -53,7 +53,7 @@ class TestDeleteGuards:
         monkeypatch.setattr(settings, "API_TOKEN", "t", raising=False)
         path = store[SCAN_KEY]["roots"][0]["units"][0]["path"]
         plugin.api_mark(apikey="t", path=path)
-        plugin._lock.acquire()   # 模拟 api_delete 占锁，_guarded_delete 的 finally 会释放
+        plugin._lock.acquire()   # 前提：_guarded_delete 不在内部 acquire，锁由调用方持有后 finally 释放
         return plugin, store, path
 
     def test_delete_requires_mark(self, tmp_path, monkeypatch):

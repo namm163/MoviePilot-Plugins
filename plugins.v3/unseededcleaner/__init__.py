@@ -375,7 +375,7 @@ class UnseededCleaner(_PluginBase):
             return schemas.Response(success=False, message="参数错误")
         if not self._unit_in_last_scan(path):
             return schemas.Response(success=False, message="该路径不在扫描结果中")
-        if path not in (self.get_data(PENDING_KEY) or []):
+        if path not in set(self.get_data(PENDING_KEY) or []):
             return schemas.Response(success=False, message="请先点击「删除」标记")
         if not self._lock.acquire(blocking=False):
             return schemas.Response(success=False, message="已有扫描/删除正在进行中")
@@ -408,6 +408,7 @@ class UnseededCleaner(_PluginBase):
                 shutil.rmtree(path)
             else:
                 os.remove(path)
+            # 注：三步写非原子（进程中途崩溃可能残留 pending 幽灵条目），依赖进程稳定性，风险已知
             self._remove_from_scan(path)
             self._remove_pending(path)
             self._append_delete_log(path, size)
